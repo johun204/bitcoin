@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bitcoin Dashboard</title>
+    
+    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        /* =========================================
+           [1. CSS 변수 정의 (다크 테마)]
+           ========================================= */
+        :root { 
+            --bg-color: #0b0e11;        /* 전체 배경색 */
+            --card-bg: #151920;         /* 카드 배경색 */
+            --border-color: #2a2e39;    /* 테두리 색상 */
+            --text-main: #eaecef;       /* 메인 텍스트 (흰색) */
+            --text-sub: #848e9c;        /* 서브 텍스트 (회색) */
+            --accent: #3478f6;          /* 강조색 (파랑) */
+            --up: #0ecb81;              /* 상승/매수 (초록) */
+            --down: #f6465d;            /* 하락/매도 (빨강) */
+        }
+
+        body { 
+            background: var(--bg-color); 
+            color: var(--text-main); 
+            font-family: 'Pretendard', sans-serif;
+            margin: 0; 
+            padding: 10px; 
+            box-sizing: border-box; 
+            -webkit-tap-highlight-color: transparent; /* 터치 시 파란 박스 제거 */
+        }
+        
+        * { box-sizing: inherit; }
+
+        /* =========================================
+           [2. 전체 레이아웃 (Grid & Flex)]
+           ========================================= */
+        
+        /* 메인 래퍼: 데스크탑 기준 2단 그리드 */
+        .wrapper {
+            display: grid;
+            gap: 12px;
+            /* 좌측 7 : 우측 3 비율 */
+            grid-template-columns: 7fr 3fr; 
+            /* 영역 이름 정의 */
+            grid-template-areas: 
+                "header header"
+                "asset ai"
+                "chart ai"
+                "history history";
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* 각 섹션에 그리드 영역 할당 */
+        .area-header { grid-area: header; }
+        .area-asset  { grid-area: asset; }
+        .area-chart  { grid-area: chart; }
+        .area-ai     { grid-area: ai; }
+        .area-hist   { grid-area: history; }
+
+        /* -----------------------------------------
+           [★ 모바일 최적화 미디어 쿼리]
+           화면 너비 1024px 이하일 때 적용
+           ----------------------------------------- */
+        @media (max-width: 1024px) {
+            .wrapper {
+                display: flex;       /* 그리드 해제, Flex 사용 */
+                flex-direction: column; /* 세로로 길게 배치 */
+            }
+            
+            /* [요청사항 반영] 모바일 배치 순서 강제 조정 (CSS Order) */
+            .area-header { order: 1; }
+            .area-asset  { order: 2; } /* 1. 자산 포트폴리오 */
+            .area-ai     { order: 3; } /* 2. Strategy Hub (AI 분석) */
+            .area-chart  { order: 4; } /* 3. 캔들 차트 */
+            .area-hist   { order: 5; } /* 4. 최근 거래 내역 */
+        }
+
+        /* =========================================
+           [3. 카드(Card) 컴포넌트 스타일]
+           ========================================= */
+        
+        /* 공통 카드 스타일 */
+        .card { 
+            background: var(--card-bg); 
+            border: 1px solid var(--border-color); 
+            border-radius: 12px; 
+            overflow: hidden; /* 접었을 때 내용 숨김 */
+            transition: all 0.3s ease; /* 부드러운 전환 효과 */
+        }
+
+        /* 카드 헤더 (클릭하여 접기/펴기 가능) */
+        .card-header {
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid transparent;
+            cursor: pointer; /* 클릭 가능 표시 */
+            user-select: none; /* 텍스트 선택 방지 */
+        }
+        
+        /* 내용이 펼쳐졌을 때 헤더 하단 라인 표시 */
+        .card:not(.collapsed) .card-header {
+            border-bottom-color: var(--border-color);
+        }
+
+        .card-title { font-size: 0.95rem; font-weight: 700; color: var(--text-main); }
+        
+        /* 접기/펴기 아이콘 (CSS로 화살표 구현) */
+        .toggle-icon::after {
+            content: '▼';
+            font-size: 0.8rem;
+            color: var(--text-sub);
+            display: inline-block;
+            transition: transform 0.3s;
+        }
+        /* 접혔을 때 아이콘 회전 */
+        .card.collapsed .toggle-icon::after { transform: rotate(-90deg); }
+
+        /* 카드 본문 (내용물) */
+        .card-body {
+            padding: 15px;
+            display: block; /* 기본: 보임 */
+        }
+        /* 접혔을 때 본문 숨김 */
+        .card.collapsed .card-body {
+            display: none;
+        }
+
+        /* =========================================
+           [4. 개별 섹션 스타일]
+           ========================================= */
+
+        /* [Header] 상단 앱 바 */
+        .app-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 0 5px; }
+        .logo { font-size: 1.2rem; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+        .badge-live { font-size: 0.7rem; background: rgba(14, 203, 129, 0.15); color: var(--up); padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        .update-info { font-size: 0.75rem; color: var(--text-sub); }
+
+        /* [Asset] 자산 카드 */
+        .asset-layout { display: flex; align-items: center; gap: 15px; }
+        .asset-text { flex: 1; }
+        .asset-chart-wrapper { 
+            flex: 1; 
+            height: 180px; /* 데스크탑 기본 높이 */
+            position: relative; 
+            display: flex; justify-content: center; align-items: center;
+        }
+
+        /* 총 자산 텍스트 */
+        .equity-val { font-size: 1.6rem; font-weight: 800; letter-spacing: 0.5px; }
+        .roi-badge { font-size: 0.9rem; font-weight: bold; margin-left: 5px; }
+        .detail-item { display: flex; justify-content: space-between; font-size: 0.9rem; margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.05); }
+        .label-gray { color: var(--text-sub); font-size: 0.85rem; }
+
+        /* 모바일에서 도넛 차트 크기 축소 */
+        @media (max-width: 600px) {
+            .asset-chart-wrapper { height: 140px; width: 140px; flex: none; } /* [요청반영] 크기 축소 */
+            .asset-layout { justify-content: space-between; }
+            .equity-val { font-size: 1.4rem; }
+        }
+
+        /* [AI Hub] 전략 카드 */
+        .ai-score-container { text-align: center; margin-bottom: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; }
+        .score-val { font-size: 2rem; font-weight: 900; line-height: 1; }
+        .regime-badge { font-size: 0.8rem; background: #333; padding: 2px 8px; border-radius: 4px; color: #fff; margin-top: 5px; display: inline-block; }
+        
+        .radar-chart-area { height: 220px; position: relative; width: 100%; margin: 10px 0; }
+        
+        .log-list { list-style: none; padding: 0; margin: 0; max-height: 120px; overflow-y: auto; font-size: 0.8rem; color: var(--text-sub); border-top: 1px solid var(--border-color); padding-top: 10px; }
+        .log-list li { margin-bottom: 4px; display: flex; gap: 6px; }
+        .log-list li::before { content: "▹"; color: var(--accent); }
+
+        /* [Chart] 캔들 차트 */
+        .chart-frame { position: relative; height: 450px; }
+        .price-overlay { position: absolute; top: 10px; left: 10px; z-index: 20; background: rgba(21, 25, 32, 0.8); padding: 6px 10px; border-radius: 6px; pointer-events: none; }
+        .overlay-price { font-size: 1.4rem; font-weight: 700; color: var(--text-main); }
+        .overlay-pair { font-size: 0.75rem; color: var(--text-sub); }
+        
+        .tf-group { position: absolute; top: 10px; right: 10px; z-index: 20; display: flex; gap: 4px; }
+        .tf-btn { background: rgba(42, 46, 57, 0.9); border: 1px solid var(--border-color); color: var(--text-sub); padding: 5px 10px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; }
+        .tf-btn.active { background: var(--accent); color: white; border-color: var(--accent); font-weight: bold; }
+
+        @media (max-width: 600px) {
+            .chart-frame { height: 350px; } /* 모바일에서 차트 높이 적절히 조절 */
+        }
+
+        /* [History] 거래 내역 */
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; white-space: nowrap; }
+        th { text-align: left; padding: 10px; color: var(--text-sub); border-bottom: 1px solid var(--border-color); }
+        td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .btn-more { width: 100%; padding: 12px; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-sub); margin-top: 10px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+
+    </style>
+</head>
+<body>
+
+<div class="wrapper">
+    
+    <div class="area-header app-header">
+        <div class="logo">
+            <span>📈 Bitcoin Dashboard</span>
+            <span class="badge-live">RUNNING</span>
+        </div>
+        <div class="update-info" id="ts">Connecting...</div>
+    </div>
+
+    <div class="area-asset card">
+        <div class="card-header" onclick="toggleCard(this)">
+            <span class="card-title">Portfolio Overview</span>
+            <span class="toggle-icon"></span>
+        </div>
+        <div class="card-body">
+            <div class="asset-layout">
+                <div class="asset-text">
+                    <div style="margin-bottom: 15px;">
+                        <div class="label-gray">Total Net Equity</div>
+                        <div class="equity-val" id="equity">0</div>
+                        <span id="roi" class="roi-badge">0.00%</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label-gray">KRW</span>
+                        <span id="cash" style="font-weight:500">0</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label-gray">BTC</span>
+                        <span id="btc" style="font-weight:500">0.00000000</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label-gray">Valuation</span>
+                        <span id="btc-val" style="color:var(--accent)">≈ 0</span>
+                    </div>
+                </div>
+                <div class="asset-chart-wrapper">
+                    <canvas id="pieChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="area-ai card">
+        <div class="card-header" onclick="toggleCard(this)">
+            <span class="card-title">Strategy Hub</span>
+            <span class="toggle-icon"></span>
+        </div>
+        <div class="card-body">
+            <div class="ai-score-container">
+                <div style="font-size:0.8rem; color:var(--text-sub)">AI Signal Score</div>
+                <div class="score-val" id="score">0</div>
+                <div class="regime-badge" id="regime">-</div>
+                <div id="opinion" style="font-size:0.8rem; margin-top:5px; color:var(--text-main)">Neutral</div>
+            </div>
+            
+            <div class="radar-chart-area">
+                <canvas id="radarChart"></canvas>
+            </div>
+
+            <div style="margin-top:10px;">
+                <div class="label-gray">Recent Logs</div>
+                <ul class="log-list" id="reasons">
+                    <li>System initialized...</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="area-chart card">
+        <div class="card-header" onclick="toggleCard(this)">
+            <span class="card-title">BTC Market Price</span>
+            <span class="toggle-icon"></span>
+        </div>
+        <div class="card-body" style="padding:0;"> <div class="chart-frame">
+                <div class="price-overlay">
+                    <div class="overlay-price" id="price">0</div>
+                    <div class="overlay-pair">KRW / BTC</div>
+                </div>
+                <div class="tf-group">
+                    <button class="tf-btn" onclick="changeTf('d', this)">1D</button>
+                    <button class="tf-btn" onclick="changeTf('h1', this)">1H</button>
+                    <button class="tf-btn active" onclick="changeTf('m15', this)">15m</button>
+                    <button class="tf-btn" onclick="changeTf('m5', this)">5m</button>
+                </div>
+                <div id="tv-chart" style="width: 100%; height: 100%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="area-hist card">
+        <div class="card-header" onclick="toggleCard(this)">
+            <span class="card-title">Recent Trades</span>
+            <span class="toggle-icon"></span>
+        </div>
+        <div class="card-body">
+            <div style="overflow-x: auto;">
+                <table id="trade-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Side</th>
+                            <th>Price</th>
+                            <th>Vol</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <button class="btn-more" onclick="loadMore()">Show More History</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // ============================================
+    // 1. UI 인터랙션 (카드 접기/펴기)
+    // ============================================
+    function toggleCard(header) {
+        const card = header.parentElement;
+        card.classList.toggle('collapsed');
+        
+        // 차트가 있는 카드가 펼쳐질 때, 차트 크기 재조정 트리거 (렌더링 이슈 방지)
+        if (!card.classList.contains('collapsed')) {
+            // 약간의 지연 후 리사이즈 (CSS 트랜지션 고려)
+            setTimeout(() => {
+                if(card.querySelector('#tv-chart')) {
+                    chart.timeScale().fitContent();
+                }
+            }, 300);
+        }
+    }
+
+    // ============================================
+    // 2. 차트 초기화
+    // ============================================
+    
+    // (1) Lightweight Charts (메인 캔들)
+    const chartDiv = document.getElementById('tv-chart');
+    const chart = LightweightCharts.createChart(chartDiv, {
+        layout: { backgroundColor: '#151920', textColor: '#848e9c', fontFamily: 'Pretendard' },
+        grid: { vertLines: { color: '#2a2e39' }, horzLines: { color: '#2a2e39' } },
+        timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 2 },
+        rightPriceScale: { borderColor: '#2a2e39', scaleMargins: { top: 0.2, bottom: 0.1 } }, // 오버레이 공간 확보
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+    });
+
+    // 화면 크기 변경 시 차트 자동 리사이징
+    new ResizeObserver(entries => {
+        if (entries.length === 0 || entries[0].target !== chartDiv) return;
+        const rect = entries[0].contentRect;
+        chart.applyOptions({ width: rect.width, height: rect.height });
+    }).observe(chartDiv);
+
+    const candleSeries = chart.addCandlestickSeries({
+        upColor: '#0ecb81', downColor: '#f6465d',
+        borderUpColor: '#0ecb81', borderDownColor: '#f6465d',
+        wickUpColor: '#0ecb81', wickDownColor: '#f6465d'
+    });
+    
+    const vwapSeries = chart.addLineSeries({ color: '#fbbf24', lineWidth: 2, title: 'VWAP' });
+
+    // (2) Chart.js - 도넛 차트 (자산 비중)
+    const pieCtx = document.getElementById('pieChart').getContext('2d');
+    const pieChart = new Chart(pieCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['KRW', 'BTC'],
+            datasets: [{
+                data: [50, 50],
+                backgroundColor: ['#2a2e39', '#fbbf24'], // 회색 / 노란색
+                borderWidth: 0,
+                hoverOffset: 5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '70%', // 도넛 두께 (얇게)
+            plugins: {
+                legend: { display: false }, // 공간 절약을 위해 범례 숨김 (텍스트로 표시하므로)
+                tooltip: { enabled: true }
+            }
+        }
+    });
+
+    // (3) Chart.js - 레이더 차트 (5 Factor)
+    const radarCtx = document.getElementById('radarChart').getContext('2d');
+    const radarChart = new Chart(radarCtx, {
+        type: 'radar',
+        data: {
+            labels: ['Trend', 'Osc', 'Vol', 'Flow', 'Insight'],
+            datasets: [{
+                label: 'Score',
+                data: [0,0,0,0,0],
+                backgroundColor: 'rgba(52, 120, 246, 0.2)', // 반투명 블루
+                borderColor: '#3478f6',
+                pointBackgroundColor: '#fff',
+                pointRadius: 3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    angleLines: { color: '#2a2e39' },
+                    grid: { color: '#2a2e39' },
+                    pointLabels: { color: '#cfd3da', font: { size: 10, weight:'bold' } },
+                    suggestedMin: -100, suggestedMax: 100,
+                    ticks: { display: false }
+                }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    // ============================================
+    // 3. 데이터 업데이트 및 렌더링
+    // ============================================
+    
+    const fmt = n => new Intl.NumberFormat('ko-KR').format(Math.round(n));
+    let chartCache = null;
+    let currentTf = 'm15';
+    let tradeList = [];
+    let tradeLimit = 10;
+
+    async function updateData() {
+        const ts = new Date().getTime(); // 캐시 방지용 타임스탬프
+        try {
+            // 병렬로 데이터 파일 로드
+            const [w, a, h, c] = await Promise.all([
+                fetch(`./data/wallet.json?t=${ts}`).then(r=>r.json()),
+                fetch(`./data/analysis_result.json?t=${ts}`).then(r=>r.json()),
+                fetch(`./data/trade_history.json?t=${ts}`).then(r=>r.json()),
+                fetch(`./data/ohlcv_data.json?t=${ts}`).then(r=>r.json())
+            ]);
+
+            // [자산 정보 업데이트]
+            document.getElementById('equity').innerText = fmt(w.net_equity);
+            
+            const roi = ((w.net_equity - 1000000)/1000000)*100; // 초기자본 100만 가정
+            const roiEl = document.getElementById('roi');
+            roiEl.innerText = (roi>=0 ? '+' : '') + roi.toFixed(2) + '%';
+            roiEl.style.color = roi>=0 ? 'var(--up)' : 'var(--down)';
+            
+            document.getElementById('cash').innerText = fmt(w.krw);
+            document.getElementById('btc').innerText = w.btc.toFixed(8);
+            const btcVal = w.btc * a.current_price;
+            document.getElementById('btc-val').innerText = '≈ ' + fmt(btcVal);
+
+            // 도넛 차트 업데이트
+            pieChart.data.datasets[0].data = [w.krw, btcVal];
+            pieChart.update();
+
+            // [AI 정보 업데이트]
+            document.getElementById('price').innerText = fmt(a.current_price);
+            document.getElementById('ts').innerText = a.timestamp.substring(5); // 날짜-시간만
+            
+            const scoreEl = document.getElementById('score');
+            scoreEl.innerText = a.score;
+            scoreEl.style.color = a.score > 20 ? 'var(--up)' : (a.score < -20 ? 'var(--down)' : 'var(--text-main)');
+            
+            document.getElementById('regime').innerText = a.regime;
+            document.getElementById('opinion').innerText = `Target: ${(a.target_ratio*100).toFixed(0)}% (${a.opinion})`;
+
+            // 로그 업데이트
+            const logs = a.reasons || ["Waiting..."];
+            document.getElementById('reasons').innerHTML = logs.map(r => `<li>${r}</li>`).join('');
+
+            // 레이더 차트 업데이트
+            if(a.score_breakdown) {
+                radarChart.data.datasets[0].data = [
+                    a.score_breakdown.trend || 0,
+                    a.score_breakdown.oscillator || 0,
+                    a.score_breakdown.volatility || 0,
+                    a.score_breakdown.money || 0,
+                    a.score_breakdown.insight || 0
+                ];
+                radarChart.update();
+            }
+
+            // [거래 내역 업데이트]
+            tradeList = h.sort((a,b)=> new Date(b.time)-new Date(a.time));
+            renderTrades();
+
+            // [메인 차트 데이터 업데이트]
+            const isFirstLoad = !chartCache; // 첫 로딩인지 확인
+            chartCache = c;
+            renderMainChart(currentTf);
+            
+            // 첫 로딩 시에만 차트 줌을 데이터에 맞게 자동 조정 (fitContent)
+            if(isFirstLoad) {
+                chart.timeScale().fitContent();
+            }
+
+        } catch(e) { console.error(e); }
+    }
+
+    function renderTrades() {
+        const tbody = document.querySelector('#trade-table tbody');
+        const view = tradeList.slice(0, tradeLimit);
+        
+        if(view.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:15px; color:#555;">No Trades Yet</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = view.map(t => `
+            <tr>
+                <td>${t.time.substring(5,16)}</td>
+                <td style="color:${t.type==='BUY'?'var(--up)':'var(--down)'}; font-weight:bold;">${t.type}</td>
+                <td>${fmt(t.price)}</td>
+                <td>${Number(t.volume).toFixed(6)}</td> 
+            </tr>
+        `).join('');
+    }
+
+    window.loadMore = function() {
+        tradeLimit += 20;
+        renderTrades();
+    }
+
+    function renderMainChart(tf) {
+        if(!chartCache || !chartCache[tf]) return;
+        const data = chartCache[tf];
+        
+        // KST 시간 보정
+        const candles = data.map(d => ({
+            time: new Date(d.time).getTime()/1000 + (9*3600),
+            open: d.open, high: d.high, low: d.low, close: d.close
+        }));
+        
+        const vwap = [];
+        data.forEach(d => {
+            if(d.VWAP) vwap.push({ time: new Date(d.time).getTime()/1000 + (9*3600), value: d.VWAP });
+        });
+
+        candleSeries.setData(candles);
+        vwapSeries.setData(vwap);
+    }
+
+    window.changeTf = function(tf, btn) {
+        currentTf = tf;
+        document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderMainChart(tf);
+        if(chartCache && chartCache[tf]) chart.timeScale().fitContent();
+    }
+
+    // 초기 실행
+    updateData();
+    setInterval(updateData, 20000); // 20초마다 갱신
+
+</script>
+</body>
+</html>
