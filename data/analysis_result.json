@@ -1,0 +1,54 @@
+{
+    "timestamp": "2026-02-22 20:07:06",
+    "current_price": 100151000,
+    "score": -21.97,
+    "score_breakdown": {
+        "trend": 100,
+        "oscillator": -46,
+        "volatility": -33,
+        "money": -4,
+        "insight": -30
+    },
+    "target_ratio": 0.0,
+    "opinion": "Sell",
+    "regime": "Squeeze/Range",
+    "factors": {
+        "trend": {
+            "score": 100,
+            "weight": 0.1
+        },
+        "oscillator": {
+            "score": -46,
+            "weight": 0.4
+        },
+        "volatility": {
+            "score": -33,
+            "weight": 0.4
+        },
+        "money_flow": {
+            "score": -4,
+            "weight": 0.1
+        },
+        "insight": {
+            "score": -30,
+            "weight": 0.0
+        }
+    },
+    "reasons": [
+        "Regime: Squeeze/Range",
+        "Trend: 100 (Wt: 0.1)",
+        "Oscillator: -46 (Wt: 0.4)",
+        "Vol: -33 (Wt: 0.4)",
+        "Money: -4 (Wt: 0.1)",
+        "Insight: -30 (Wt: 0.0)"
+    ],
+    "weights": {
+        "trend": 0.1,
+        "osc": 0.4,
+        "vol": 0.4,
+        "money": 0.1,
+        "insight": 0.0
+    },
+    "trade_threshold": 0.1,
+    "is_emergency": false
+}
